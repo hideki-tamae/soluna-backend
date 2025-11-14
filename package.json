@@ -1,21 +1,16 @@
 {
   "name": "soluna-backend",
-  "private": true,
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
-
-"scripts": {
-  "dev": "node server.js",
-  "start": "node server.js"
-}
-
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.81.1",
+    "@supabase/supabase-js": "^2.48.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "ethers": "^5.7.2",
-    "express": "^4.19.2",
-    "pg": "^8.11.5"
+    "express": "^4.18.2"
   }
 }
