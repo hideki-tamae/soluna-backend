@@ -4,10 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
-  "scripts": {
-    "dev": "node server.js",
-    "send": "node send-tokens-from-claims.js"
-  },
+
+"scripts": {
+  "dev": "node server.js",
+  "start": "node server.js"
+}
+
   "dependencies": {
     "@supabase/supabase-js": "^2.81.1",
     "cors": "^2.8.5",
