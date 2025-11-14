@@ -1,115 +1,110 @@
-// server.js — Node 22 (ESM) / ethers v6 / Express + Postgres
-// 開発用：DBはTLS暗号化のまま証明書検証OFF（本番はONに戻す）
-
+// server.js (ESM 版)
 import dotenv from 'dotenv';
-dotenv.config();
-
 import express from 'express';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
-import pg from 'pg';
-const { Pool } = pg;
-import { ethers } from 'ethers';
+import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
-// ---- ENV ----
-const {
-  PORT = 3001,
-  SEPOLIA_RPC,
-  AUTOMATION_PRIVATE_KEY,
-  DATABASE_URL,
-} = process.env;
+dotenv.config();
 
-// ---- DB（開発用：検証OFF only / 二重定義しない）----
-let dbPool = null;
-try {
-  if (DATABASE_URL) {
-    dbPool = new Pool({
-      connectionString: DATABASE_URL,
-      // 開発だけ：TLSは張るが証明書検証は無効化
-      ssl: { require: true, rejectUnauthorized: false },
-    });
-  } else {
-    console.warn('⚠️ DATABASE_URL 未設定のため DB チェックをスキップします');
-  }
-} catch (e) {
-  console.warn('⚠️ DB init warn:', e?.message || e);
-}
-
-// ---- Chain / Signer（未設定でも起動継続）----
-let provider = null;
-let signer = null;
-
-try {
-  if (SEPOLIA_RPC && AUTOMATION_PRIVATE_KEY) {
-    provider = new ethers.JsonRpcProvider(SEPOLIA_RPC);
-    signer = new ethers.Wallet(AUTOMATION_PRIVATE_KEY, provider);
-  } else {
-    console.warn('⚠️ SEPOLIA_RPC / AUTOMATION_PRIVATE_KEY が未設定のためチェーン接続をスキップ');
-  }
-} catch (e) {
-  console.warn('⚠️ Chain init warn:', e?.message || e);
-}
-
-// ---- Express ----
 const app = express();
-app.use(express.json());
-app.use(cors({ origin: '*', methods: ['GET','POST'] }));
-app.use(rateLimit({ windowMs: 60_000, max: 60 }));
+const port = process.env.PORT || 3001;
 
-// ルート
-app.get('/', (_req, res) => {
-  res.send('SOLUNA Claim Server is ready.');
-});
+app.use(cors());
+app.use(express.json());
+
+// Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !serviceKey) {
+  throw new Error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set');
+}
+
+const supabase = createClient(supabaseUrl, serviceKey);
+
+// HMAC
+const secret = process.env.SIGNING_SECRET || '';
+
+function verifySignature(payload, signature) {
+  if (!secret || !signature) return false;
+
+  const data = JSON.stringify(payload);
+  const expected = crypto.createHmac('sha256', secret).update(data).digest('hex');
+
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expected, 'utf8'),
+      Buffer.from(signature, 'utf8')
+    );
+  } catch {
+    return false;
+  }
+}
 
 // ヘルスチェック
-app.get('/health', async (_req, res) => {
-  const checks = {};
-
-  // DB
-  if (dbPool) {
-    try {
-      await dbPool.query('SELECT 1');
-      checks.db = { connected: true };
-    } catch (e) {
-      checks.db = { error: String(e?.message || e) };
-    }
-  } else {
-    checks.db = { skipped: true };
-  }
-
-  // RPC/Signer
-  if (provider && signer) {
-    try {
-      const net = await provider.getNetwork();
-      const addr = await signer.getAddress();
-      checks.rpc = {
-        chainId: Number(net.chainId),
-      };
-      // サインテスト（ダミーメッセージ）
-      const sig = await signer.signMessage('healthcheck');
-      checks.sign = {
-        signer: `0x${addr.slice(2,6)}...${addr.slice(-3)}`,
-        sig: `${sig.slice(0,14)}…`,
-      };
-    } catch (e) {
-      checks.rpc = { error: String(e?.message || e) };
-    }
-  } else {
-    checks.rpc = { skipped: true };
-  }
-
-  const ok = !checks.db?.error;
-  res.json({ ok, checks });
+app.get('/', (_req, res) => {
+  res.json({ ok: true, service: 'soluna-backend' });
 });
 
-// 起動
-app.listen(PORT, () => {
-  console.log(`✅ SOLUNA Backend Server is running on port ${PORT}`);
+// ★ claim API 本体
+app.post('/claim', async (req, res) => {
+  try {
+    const signature = req.header('x-signature') || '';
+    const body = req.body || {};
+
+    //  if (!verifySignature(body, signature)) {
+    //   return res.status(401).json({ ok: false, error: 'invalid signature' });
+    // }
+
+    const wallet = String(body.wallet || '').trim();
+    const soluna = String(body.soluna || '').trim();
+    const phrase = String(body.phrase || '').trim();
+
+    if (!wallet) {
+      return res.status(400).json({ ok: false, error: 'wallet required' });
+    }
+
+    // 二重クレームチェック
+    const { data: existing, error: selectError } = await supabase
+      .from('claims')
+      .select('id')
+      .eq('wallet', wallet)
+      .maybeSingle();
+
+    if (selectError) {
+      console.error('select error:', selectError);
+      return res.status(500).json({ ok: false, error: 'db select error' });
+    }
+
+    if (existing) {
+      return res.status(409).json({ ok: false, error: 'already claimed' });
+    }
+
+    // 新規 insert
+    const { data, error } = await supabase
+      .from('claims')
+      .insert({
+        wallet,
+        soluna_literal: soluna,
+        phrase,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('insert error:', error);
+      return res.status(500).json({ ok: false, error: 'db insert error' });
+    }
+
+    return res.json({ ok: true, claim: data });
+  } catch (e) {
+    console.error('claim route error:', e);
+    return res.status(500).json({ ok: false, error: 'server error' });
+  }
 });
 
-// 起動時に一度だけDBに触ってログ
-if (dbPool) {
-  dbPool.query('SELECT NOW()')
-    .then(() => console.log('✅ Connected successfully to Database.'))
-    .catch(err => console.error('❌ Database connection error:', err?.message || err));
-}
+app.listen(port, () => {
+  console.log(`SOLUNA Backend Server is running on port ${port}`);
+});

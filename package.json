@@ -1,21 +1,19 @@
 {
   "name": "soluna-backend",
-  "version": "0.1.0",
   "private": true,
+  "version": "1.0.0",
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "send": "node send-tokens-from-claims.js"
   },
   "dependencies": {
-    "@safe-global/protocol-kit": "^6.1.1",
-    "bcryptjs": "^2.4.3",
+    "@supabase/supabase-js": "^2.81.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.6.1",
-    "ethers": "^6.15.0",
-    "express": "^4.21.2",
-    "express-rate-limit": "^8.2.1",
-    "pg": "^8.16.3"
+    "dotenv": "^16.4.5",
+    "ethers": "^5.7.2",
+    "express": "^4.19.2",
+    "pg": "^8.11.5"
   }
 }
