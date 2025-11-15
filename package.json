@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "type": "module",
   "main": "server.js",
-  "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js"
-  },
+"scripts": {
+  "start": "node server.js",
+  "dev": "node server.js",
+  "migrate:claims": "node db_migrate_claims.cjs",
+  "fix:claims-address": "node db_fix_claims_address.cjs",
+  "send:tokens": "node send-tokens-from-claims.js"
+},
   "dependencies": {
     "@supabase/supabase-js": "^2.48.0",
     "cors": "^2.8.5",
