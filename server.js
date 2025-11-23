@@ -1,4 +1,4 @@
-// server.js (ESM 版)
+// server.js (ESM 版 / Railway 対応)
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
@@ -8,7 +8,8 @@ import crypto from 'crypto';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3001;
+// Railway では必ず process.env.PORT を見る
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -47,13 +48,14 @@ app.get('/', (_req, res) => {
   res.json({ ok: true, service: 'soluna-backend' });
 });
 
-// ★ claim API 本体
-app.post('/claim', async (req, res) => {
+// 共通の claim 処理本体
+async function handleClaim(req, res) {
   try {
     const signature = req.header('x-signature') || '';
     const body = req.body || {};
 
-    //  if (!verifySignature(body, signature)) {
+    // 署名チェックを有効にする場合はコメントアウトを外す
+    // if (!verifySignature(body, signature)) {
     //   return res.status(401).json({ ok: false, error: 'invalid signature' });
     // }
 
@@ -103,8 +105,13 @@ app.post('/claim', async (req, res) => {
     console.error('claim route error:', e);
     return res.status(500).json({ ok: false, error: 'server error' });
   }
-});
+}
 
-app.listen(port, () => {
-  console.log(`SOLUNA Backend Server is running on port ${port}`);
+// ★ claim API 本体
+// フロントから /claim でも /api/claim でも叩けるようにしておく
+app.post('/claim', handleClaim);
+app.post('/api/claim', handleClaim);
+
+app.listen(PORT, () => {
+  console.log(`SOLUNA Backend Server is running on port ${PORT}`);
 });
